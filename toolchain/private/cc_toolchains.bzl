@@ -90,6 +90,7 @@ def declare_cc_toolchains(os, zig_sdk_path, sysroots_json = "{}"):
                     # rust-lld, and swipl's framework link happens inside cmake.
                     sysroot_copts += ["-isysroot", path]
                     sysroot_linkopts += ["-isysroot", path]
+
             # Search the SDK include dirs with -idirafter (LOWEST priority, AFTER
             # the compiler's own libc++/libc headers) rather than -I. zig
             # cross-compiling to *-macos-none does NOT derive usr/include from

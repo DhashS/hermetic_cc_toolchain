@@ -16,8 +16,8 @@ declare_files(
 
 declare_cc_toolchains(
     os = {os},
-    zig_sdk_path = {zig_sdk_path},
     sysroots_json = {sysroots_json},
+    zig_sdk_path = {zig_sdk_path},
 )
 
 declare_zig_toolchain(name = "zig_toolchain")
