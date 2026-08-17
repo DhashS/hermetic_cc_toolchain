@@ -287,6 +287,10 @@ fn parseArgs(
     if (run_mode == RunMode.cc)
         try resolveColonLibraries(arena, cwd, &args);
 
+    // Absolutize relative -F/-iframework framework dirs (macOS); see fn below.
+    if (run_mode == RunMode.cc)
+        try absolutizeFrameworkDirs(arena, cwd, &args);
+
     // Add -target as the last parameter. The wrapper should overwrite
     // the target specified by other tools calling the wrapper.
     // Some tools might pass LLVM target triple, which are rejected by zig.
@@ -338,6 +342,43 @@ fn resolveColonLibraries(
             break;
         }
     }
+}
+
+// zig cc's linker resolves relative -L/-l (like resolveColonLibraries above) but
+// not a relative -F framework dir — it needs an absolute one, else `-framework
+// Foo` fails "searched paths:  none". Rewrite relative -F/-iframework (separate
+// and fused spellings, existing dirs only) to absolute at exec time (cwd =
+// execroot). macOS-only in practice. Rationale: DhashS/hermetic_cc_toolchain#1.
+fn absolutizeFrameworkDirs(
+    arena: mem.Allocator,
+    cwd: fs.Dir,
+    args: *ArrayListUnmanaged([]const u8),
+) error{OutOfMemory}!void {
+    const base = cwd.realpathAlloc(arena, ".") catch return;
+    var i: usize = 0;
+    while (i < args.items.len) : (i += 1) {
+        const arg = args.items[i];
+        if ((mem.eql(u8, arg, "-F") or mem.eql(u8, arg, "-iframework")) and
+            i + 1 < args.items.len)
+        {
+            if (try absFrameworkDir(arena, base, cwd, args.items[i + 1])) |d|
+                args.items[i + 1] = d;
+            i += 1;
+        } else inline for (.{ "-F", "-iframework" }) |flag| {
+            if (mem.startsWith(u8, arg, flag) and arg.len > flag.len) {
+                if (try absFrameworkDir(arena, base, cwd, arg[flag.len..])) |d|
+                    args.items[i] = try std.fmt.allocPrint(arena, "{s}{s}", .{ flag, d });
+                break;
+            }
+        }
+    }
+}
+
+// Join relative `rel` (must exist relative to cwd) onto absolute `base`; else null.
+fn absFrameworkDir(a: mem.Allocator, base: []const u8, cwd: fs.Dir, rel: []const u8) error{OutOfMemory}!?[]const u8 {
+    if (rel.len == 0 or fs.path.isAbsolute(rel)) return null;
+    cwd.access(rel, .{}) catch return null;
+    return try fs.path.join(a, &[_][]const u8{ base, rel });
 }
 
 fn parseFatal(
